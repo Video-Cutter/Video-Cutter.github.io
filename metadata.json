@@ -1,0 +1,6 @@
+{
+  "name": "Frame Video Generator 15s",
+  "description": "Pembuat bingkai video vertikal (9:16) dan editor papan cerita (storyboard) untuk video 15 detik (TikTok, Reels, Shorts) dengan pemutaran real-time, templat kreatif, dan ide cerita bertenaga AI Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
