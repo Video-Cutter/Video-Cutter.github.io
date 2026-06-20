@@ -1068,24 +1068,41 @@ export default function App() {
   const handleCloudOrPinterestSubmit = async (urlStr: string) => {
     if (!urlStr) return;
     const trimmed = urlStr.trim();
+    const isStaticHosting = window.location.hostname.endsWith("github.io");
 
     // Check if it is a Pinterest link
     if (trimmed.includes("pinterest.com") || trimmed.includes("pin.it")) {
       setIsParsingPinterest(true);
       setStreamError(null);
+
+      if (isStaticHosting) {
+        setStreamError("⚠️ Fitur Ekstraktor Pinterest membutuhkan backend Node.js. Karena aplikasi ini dijalankan di GitHub Pages (Statis), server API /api/pinterest-parser tidak aktif. Silakan gunakan link direct MP4/M3U8 langsung, atau unggah video lokal dari perangkat Anda.");
+        setIsParsingPinterest(false);
+        return;
+      }
+
       try {
         const res = await fetch(`/api/pinterest-parser?url=${encodeURIComponent(trimmed)}`);
+        
+        // Deteksi jika server mengembalikan halaman HTML (seperti halaman 404 dari GitHub Pages)
+        const contentType = res.headers.get("content-type") || "";
+        if (!res.ok || contentType.includes("text/html")) {
+          throw new Error("Server API backend tidak aktif atau mengembalikan halaman HTML. Ini biasanya terjadi ketika aplikasi dideploy sebagai static site (GitHub Pages) tanpa server Node.js aktif.");
+        }
+
         const json = await res.json();
         
         if (json.success && json.proxiedUrl) {
-          setStreamUrl(json.proxiedUrl);
+          // Jika di static hosting, jangan gunakan proxiedUrl karena /api/proxy-video juga akan 404
+          const finalStreamUrl = isStaticHosting ? json.directUrl : json.proxiedUrl;
+          setStreamUrl(finalStreamUrl);
           setStreamError(null);
         } else {
           setStreamError(json.error || "Gagal mengekstrak video dari Pinterest.");
         }
       } catch (err: any) {
         console.error("Failed to parse Pinterest video", err);
-        setStreamError(`Koneksi error saat mengekstrak Pinterest: ${err.message}`);
+        setStreamError(`⚠️ Kendala Ekstraksi: ${err.message}. Karena aplikasi diluncurkan di GitHub Pages (Statis), kami menyarankan untuk mengunggah file video langsung atau menggunakan Link Direct m3u8/MP4.`);
       } finally {
         setIsParsingPinterest(false);
       }
@@ -1098,7 +1115,12 @@ export default function App() {
     // Check if it's Pinterest direct media server (pinimg.com) that might be protected by CORS
     let finalUrl = directUrl;
     if (directUrl.includes("pinimg.com")) {
-      finalUrl = `/api/proxy-video?url=${encodeURIComponent(directUrl)}`;
+      if (isStaticHosting) {
+        // Gunakan link langsung karena API proxy tidak ada di static hosting
+        finalUrl = directUrl;
+      } else {
+        finalUrl = `/api/proxy-video?url=${encodeURIComponent(directUrl)}`;
+      }
     }
     
     setStreamUrl(finalUrl);
