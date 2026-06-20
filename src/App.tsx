@@ -1078,31 +1078,76 @@ export default function App() {
       try {
         let json;
         if (isStaticHosting) {
-          // Memanfaatkan CORS proxy gratis publik (allorigins) untuk mengambil HTML dari browser langsung
-          const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(trimmed)}`;
-          const proxyRes = await fetch(proxyUrl);
-          if (!proxyRes.ok) {
-            throw new Error(`Gagal menghubungi CORS proxy publik (Status: ${proxyRes.status})`);
-          }
-          const proxyJson = await proxyRes.json();
-          const html = proxyJson.contents;
+          // Fungsi pembantu untuk mencoba mengambil HTML melalui beberapa CORS proxy publik yang berbeda
+          const tryFetchWithProxies = async (url: string) => {
+            const proxyConfigs = [
+              {
+                name: "AllOrigins",
+                url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+                parser: async (res: Response) => {
+                  const data = await res.json();
+                  return data.contents || "";
+                }
+              },
+              {
+                name: "CORSProxy.io",
+                url: `https://corsproxy.io/?${encodeURIComponent(url)}`,
+                parser: async (res: Response) => res.text()
+              },
+              {
+                name: "Codetabs",
+                url: `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(url)}`,
+                parser: async (res: Response) => res.text()
+              }
+            ];
+
+            let lastError = null;
+            for (const config of proxyConfigs) {
+              try {
+                console.log(`Mencoba mengambil Pinterest lewat proxy: ${config.name}`);
+                const response = await fetch(config.url);
+                if (response.ok) {
+                  const html = await config.parser(response);
+                  if (html && html.length > 200) {
+                    console.log(`Berhasil mengambil HTML menggunakan proxy ${config.name}`);
+                    return html;
+                  }
+                }
+              } catch (e: any) {
+                console.warn(`Proxy ${config.name} gagal:`, e);
+                lastError = e;
+              }
+            }
+            throw lastError || new Error("Semua proxy CORS publik gagal merespons.");
+          };
+
+          const html = await tryFetchWithProxies(trimmed);
 
           if (!html) {
-            throw new Error("Konten tidak dapat dibaca dari Pinterest");
+            throw new Error("Konten tidak dapat dibaca atau kosong");
           }
 
-          // Gunakan regex yang sama seperti backend untuk mengekstrak link video .mp4
-          const regex = /(https?:\\?\/\\?\/[^\s"'`<>]*pinimg\.com\\?\/videos\\?\/[^\s"'`<>]*\.mp4[^\s"'`<>]*)/gi;
-          const matches = html.match(regex);
-          
+          // Kumpulan regex pencocokan video MP4 Pinterest
+          const regexes = [
+            /(https?:\\?\/\\?\/[^\s"'`<>]*pinimg\.com\\?\/videos\\?\/[^\s"'`<>]*\.mp4[^\s"'`<>]*)/gi,
+            /"video"[^}]*"url"\s*:\s*"([^"]+\.mp4[^"]*)"/i,
+            /"contentUrl"\s*:\s*"([^"]+\.mp4[^"]*)"/i,
+            /videoUrl["']?\s*:\s*["']([^"']+\.mp4[^"']*)["']/i
+          ];
+
           let parsedUrl = "";
-          if (matches && matches.length > 0) {
-            parsedUrl = matches[0].replace(/\\/g, "").replace(/&amp;/g, "&");
-          } else {
-            const altRegex = /"video"[^}]*"url"\s*:\s*"([^"]+\.mp4[^"]*)"/i;
-            const altMatch = html.match(altRegex);
-            if (altMatch && altMatch[1]) {
-              parsedUrl = altMatch[1].replace(/\\/g, "").replace(/&amp;/g, "&");
+          for (const rx of regexes) {
+            const matches = html.match(rx);
+            if (matches && matches.length > 0) {
+              // Jika regex mengembalikan grup tangkapan (parentheses), ambil indeks 1, jika tidak ambil indeks 0
+              const matchStr = matches[0];
+              const matchGroup = html.match(rx); // Untuk mengambil capture group jika ada
+              
+              const targetStr = (matchGroup && matchGroup[1]) ? matchGroup[1] : matchStr;
+              parsedUrl = targetStr.replace(/\\/g, "").replace(/&amp;/g, "&");
+              if (parsedUrl.includes(".mp4")) {
+                break;
+              }
             }
           }
 
@@ -1110,10 +1155,17 @@ export default function App() {
             json = {
               success: true,
               directUrl: parsedUrl,
-              proxiedUrl: parsedUrl // Di static hosting kita langsung pakai directUrl karena tidak ada server proxy local
+              proxiedUrl: parsedUrl
             };
           } else {
-            throw new Error("Tidak menemukan URL video MP4 mentah pada Pin tersebut. Pastikan halaman Pinterest yang Anda masukkan memuat video publik.");
+            // Berikan saran spesifik jika tidak menemukan .mp4 di HTML
+            let errorMsg = "Tidak menemukan URL video MP4 mentah pada Pin tersebut.";
+            if (trimmed.includes("pin.it")) {
+              errorMsg += " 💡 Tips: Anda menggunakan link pendek (pin.it). Beberapa proxy tidak dapat mengikuti pengalihan (redirect) link pendek otomatis. Silakan buka video tersebut di browser Anda, lalu salin URL panjang lengkap dari bilah alamat (address bar) misalnya https://id.pinterest.com/pin/... dan coba lagi!";
+            } else {
+              errorMsg += " Pastikan halaman Pinterest yang Anda masukkan memuat video publik yang bisa diputar (bukan sekadar gambar diam/GIF).";
+            }
+            throw new Error(errorMsg);
           }
         } else {
           // Normal flow (backend server active)
@@ -1137,7 +1189,19 @@ export default function App() {
         }
       } catch (err: any) {
         console.error("Failed to parse Pinterest video", err);
-        setStreamError(`⚠️ Kendala Ekstraksi (Static Mode): ${err.message}. Karena aplikasi diluncurkan di GitHub Pages, kami mencoba mengambil data secara client-side, namun gagal. Pastikan link tersebut adalah Pin Video publik yang valid, atau unggah video melalui tombol file lokal.`);
+        let message = err.message;
+        if (message.includes("Failed to fetch")) {
+          message = "Koneksi ke semua proxy CORS eksternal diblokir oleh browser atau ekstensi AdBlock Anda.";
+        }
+        
+        let tipMsg = "";
+        if (trimmed.includes("pin.it")) {
+          tipMsg = " 💡 Hal ini sangat sering terjadi pada link pendek (pin.it) karena kendala pengalihan (redirect) di sisi browser secara statis. Solusi terbaik: silakan buka link pin.it tersebut di browser Anda terlebih dahulu, biarkan memuat halaman Pinterest lengkap, lalu salin/paste Alamat URL Panjang yang asli (misal: https://id.pinterest.com/pin/...) di sini!";
+        } else {
+          tipMsg = " Solusi: Jika tetap terkendala karena kebijakan keamanan Pinterest, Anda dapat mengunduh video tersebut ke perangkat Anda dan mengunggahnya langsung menggunakan tombol 'Pilih File MP4 Lokal' di atas secara 100% instan dan lancar.";
+        }
+        
+        setStreamError(`⚠️ Kendala Ekstraksi (Static Mode): ${message}.${tipMsg}`);
       } finally {
         setIsParsingPinterest(false);
       }
