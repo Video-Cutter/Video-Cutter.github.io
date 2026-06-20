@@ -1,0 +1,4 @@
+# File Otorisasi Penjual Iklan (Google AdSense ads.txt)
+# Silakan ganti "pub-0000000000000000" dengan nomor ID Penjual (Publisher ID) Google AdSense Anda asli yang dapat dilihat di dashboard AdSense.
+
+google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
