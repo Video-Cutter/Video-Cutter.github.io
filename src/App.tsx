@@ -136,6 +136,7 @@ export default function App() {
   const videoFileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDraggingVideo, setIsDraggingVideo] = useState<boolean>(false);
   const [isParsingPinterest, setIsParsingPinterest] = useState<boolean>(false);
+  const [pinterestStatusText, setPinterestStatusText] = useState<string>("");
   const [activeModal, setActiveModal] = useState<"about" | "privacy" | "contact" | "disclaimer" | null>(null);
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
@@ -1073,6 +1074,7 @@ export default function App() {
     // Check if it is a Pinterest link
     if (trimmed.includes("pinterest.com") || trimmed.includes("pin.it")) {
       setIsParsingPinterest(true);
+      setPinterestStatusText("Membaca Pin...");
       setStreamError(null);
 
       try {
@@ -1105,6 +1107,7 @@ export default function App() {
             for (const config of proxyConfigs) {
               try {
                 console.log(`Mencoba mengambil Pinterest lewat proxy: ${config.name}`);
+                setPinterestStatusText(`Mencari via ${config.name}...`);
                 const response = await fetch(config.url);
                 if (response.ok) {
                   const html = await config.parser(response);
@@ -1139,9 +1142,8 @@ export default function App() {
           for (const rx of regexes) {
             const matches = html.match(rx);
             if (matches && matches.length > 0) {
-              // Jika regex mengembalikan grup tangkapan (parentheses), ambil indeks 1, jika tidak ambil indeks 0
               const matchStr = matches[0];
-              const matchGroup = html.match(rx); // Untuk mengambil capture group jika ada
+              const matchGroup = html.match(rx);
               
               const targetStr = (matchGroup && matchGroup[1]) ? matchGroup[1] : matchStr;
               parsedUrl = targetStr.replace(/\\/g, "").replace(/&amp;/g, "&");
@@ -1152,13 +1154,43 @@ export default function App() {
           }
 
           if (parsedUrl) {
-            json = {
-              success: true,
-              directUrl: parsedUrl,
-              proxiedUrl: parsedUrl
+            setPinterestStatusText("Membypass CORS Video...");
+            const downloadWithProxy = async (mediaUrl: string) => {
+              const downloadProxies = [
+                { name: "CORSProxy", url: `https://corsproxy.io/?${encodeURIComponent(mediaUrl)}` },
+                { name: "AllOriginsRaw", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(mediaUrl)}` },
+                { name: "Codetabs", url: `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(mediaUrl)}` }
+              ];
+
+              for (const p of downloadProxies) {
+                try {
+                  setPinterestStatusText(`Memuat (${p.name})...`);
+                  const res = await fetch(p.url);
+                  if (res.ok) {
+                    const blob = await res.blob();
+                    if (blob.size > 1000) {
+                      setPinterestStatusText("Selesai!");
+                      return URL.createObjectURL(blob);
+                    }
+                  }
+                } catch (e) {
+                  console.warn(`Gagal mendownload video lewat proxy: ${p.name}`, e);
+                }
+              }
+              return null;
             };
+
+            const localBlobUrl = await downloadWithProxy(parsedUrl);
+            if (localBlobUrl) {
+              json = {
+                success: true,
+                directUrl: localBlobUrl,
+                proxiedUrl: localBlobUrl
+              };
+            } else {
+              throw new Error("Gagal mengunduh file video via bypass CORS proxy.");
+            }
           } else {
-            // Berikan saran spesifik jika tidak menemukan .mp4 di HTML
             let errorMsg = "Tidak menemukan URL video MP4 mentah pada Pin tersebut.";
             if (trimmed.includes("pin.it")) {
               errorMsg += " 💡 Tips: Anda menggunakan link pendek (pin.it). Beberapa proxy tidak dapat mengikuti pengalihan (redirect) link pendek otomatis. Silakan buka video tersebut di browser Anda, lalu salin URL panjang lengkap dari bilah alamat (address bar) misalnya https://id.pinterest.com/pin/... dan coba lagi!";
@@ -1180,7 +1212,6 @@ export default function App() {
         }
         
         if (json && json.success && (json.proxiedUrl || json.directUrl)) {
-          // Jika di static hosting, directUrl digunakan langsung untuk melewati reverse proxy /api/proxy-video
           const finalStreamUrl = isStaticHosting ? json.directUrl : (json.proxiedUrl || json.directUrl);
           setStreamUrl(finalStreamUrl);
           setStreamError(null);
@@ -1204,6 +1235,7 @@ export default function App() {
         setStreamError(`⚠️ Kendala Ekstraksi (Static Mode): ${message}.${tipMsg}`);
       } finally {
         setIsParsingPinterest(false);
+        setPinterestStatusText("");
       }
       return;
     }
@@ -1215,8 +1247,49 @@ export default function App() {
     let finalUrl = directUrl;
     if (directUrl.includes("pinimg.com")) {
       if (isStaticHosting) {
-        // Gunakan link langsung karena API proxy tidak ada di static hosting
-        finalUrl = directUrl;
+        setIsParsingPinterest(true);
+        setStreamError(null);
+        setPinterestStatusText("Bypass CORS...");
+        try {
+          const downloadWithProxy = async (mediaUrl: string) => {
+            const downloadProxies = [
+              { name: "CORSProxy", url: `https://corsproxy.io/?${encodeURIComponent(mediaUrl)}` },
+              { name: "AllOriginsRaw", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(mediaUrl)}` },
+              { name: "Codetabs", url: `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(mediaUrl)}` }
+            ];
+
+            for (const p of downloadProxies) {
+              try {
+                setPinterestStatusText(`Unduh (${p.name})...`);
+                const res = await fetch(p.url);
+                if (res.ok) {
+                  const blob = await res.blob();
+                  if (blob.size > 1000) {
+                    setPinterestStatusText("Selesai!");
+                    return URL.createObjectURL(blob);
+                  }
+                }
+              } catch (e) {
+                console.warn(`Gagal download dengan proxy: ${p.name}`, e);
+              }
+            }
+            return null;
+          };
+          const localBlobUrl = await downloadWithProxy(directUrl);
+          if (localBlobUrl) {
+            setStreamUrl(localBlobUrl);
+            setStreamError(null);
+          } else {
+            throw new Error("Gagal mengunduh file media pinimg.");
+          }
+        } catch (err: any) {
+          console.error(err);
+          setStreamError(`⚠️ Gagal mem-bypass CORS untuk pinimg direct link. Solusi: Gunakan upload file mp4 lokal.`);
+        } finally {
+          setIsParsingPinterest(false);
+          setPinterestStatusText("");
+        }
+        return;
       } else {
         finalUrl = `/api/proxy-video?url=${encodeURIComponent(directUrl)}`;
       }
@@ -1628,12 +1701,12 @@ export default function App() {
                   <button
                     onClick={() => handleCloudOrPinterestSubmit(cloudUrlInput)}
                     disabled={isParsingPinterest || !cloudUrlInput}
-                    className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-950/40 disabled:text-indigo-600/40 text-white px-4 rounded-2xl transition active:scale-95 text-xs font-bold cursor-pointer flex items-center gap-1.5 min-w-[130px] justify-center"
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-950/40 disabled:text-indigo-600/40 text-white px-4 rounded-2xl transition active:scale-95 text-xs font-bold cursor-pointer flex items-center gap-1.5 min-w-[160px] max-w-[250px] justify-center"
                   >
                     {isParsingPinterest ? (
                       <>
-                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>Mengekstrak...</span>
+                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
+                        <span className="truncate">{pinterestStatusText || "Mengekstrak..."}</span>
                       </>
                     ) : (
                       <>
