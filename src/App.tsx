@@ -137,7 +137,7 @@ export default function App() {
   const [isDraggingVideo, setIsDraggingVideo] = useState<boolean>(false);
   const [isParsingPinterest, setIsParsingPinterest] = useState<boolean>(false);
   const [pinterestStatusText, setPinterestStatusText] = useState<string>("");
-  const [activeModal, setActiveModal] = useState<"about" | "privacy" | "contact" | "disclaimer" | null>(null);
+  const [activeModal, setActiveModal] = useState<"about" | "privacy" | "contact" | "disclaimer" | "cors_help" | null>(null);
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
   // Sound FX System State
@@ -1767,12 +1767,26 @@ export default function App() {
             )}
 
             {streamError && (
-              <div className="p-3.5 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-2xl flex gap-2.5 items-start">
-                <AlertCircle className="w-4.5 h-4.5 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">Info Pemutaran / CORS Stream:</p>
-                  <p className="mt-0.5 leading-relaxed text-zinc-300">{streamError}</p>
+              <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-2xl flex flex-col gap-3">
+                <div className="flex gap-2.5 items-start">
+                  <AlertCircle className="w-4.5 h-4.5 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Info Pemutaran / CORS Stream:</p>
+                    <p className="mt-0.5 leading-relaxed text-zinc-300">{streamError}</p>
+                  </div>
                 </div>
+                {window.location.hostname.endsWith("github.io") && (
+                  <div className="pt-2 border-t border-rose-500/10 flex flex-wrap gap-2 items-center justify-between">
+                    <span className="text-[10px] text-zinc-400">💡 GitHub Pages membatasi server backend Node.js untuk bypass CORS Pinterest.</span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveModal("cors_help")}
+                      className="bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 hover:text-white px-3 py-1.5 rounded-xl border border-indigo-500/20 font-semibold cursor-pointer text-[10px] transition"
+                    >
+                      Pelajari Cara Deploy Backend Node.js ↗
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2920,6 +2934,7 @@ export default function App() {
                   {activeModal === "privacy" && "🔒 Kebijakan Privasi / Privacy Policy"}
                   {activeModal === "contact" && "✉️ Hubungi Kami / Contact Us"}
                   {activeModal === "disclaimer" && "⚠️ Penyangkalan Hukum / Disclaimer"}
+                  {activeModal === "cors_help" && "🌐 Solusi Hosting Node.js / CORS Bypass"}
                 </span>
               </h3>
               <button
@@ -3018,6 +3033,51 @@ export default function App() {
                   </p>
                   <p>
                     <strong>3. Batasan Hukum:</strong> Kami tidak bertanggung jawab atas segala tuntutan ganti rugi, penangguhan akun sosial media, atau kerugian digital lainnya yang diakibatkan oleh penyalahgunaan video hasil ekspor atau pelanggaran kebijakan komunitas sosial media eksternal (TikTok, Facebook, dsb) oleh pihak pengguna.
+                  </p>
+                </div>
+              )}
+
+              {activeModal === "cors_help" && (
+                <div className="space-y-4">
+                  <div className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 p-3.5 rounded-xl text-xs flex gap-2 items-start">
+                    <span className="text-sm">🛡️</span>
+                    <div>
+                      <strong className="block text-indigo-200">Kenapa Fitur Ini Bermasalah di GitHub Pages?</strong>
+                      <p className="mt-1 text-zinc-300 leading-relaxed text-[11px]">
+                        Saat memotong video secara lokal di browser, elemen <code className="text-indigo-300 bg-black/30 px-1 py-0.5 rounded font-mono font-bold">&lt;video&gt;</code> memerlukan izin <strong>CORS (Cross-Origin Resource Sharing)</strong> penuh untuk bisa menggambar frame video pada elemen <code className="text-indigo-300 bg-black/30 px-1 py-0.5 rounded font-mono font-bold">&lt;canvas&gt;</code>. Namun, server Pinterest secara ketat memblokir izin CORS ini untuk browser langsung.
+                      </p>
+                    </div>
+                  </div>
+
+                  <h4 className="font-extrabold text-white text-sm">💡 Solusi Utama Yang Dapat Anda Lakukan:</h4>
+                  
+                  <div className="space-y-3.5 mt-2">
+                    <div className="p-3 bg-zinc-950 border border-zinc-850 rounded-2xl">
+                      <p className="font-bold text-zinc-200 flex items-center gap-1.5 text-xs">
+                        <span className="text-emerald-400">⚡</span> Solusi Instan (Tanpa Server / Peta Statis):
+                      </p>
+                      <p className="mt-1 text-[11px] text-zinc-400 leading-relaxed pl-5">
+                        Unduh video Pinterest tersebut ke gawai atau komputer Anda menggunakan website video downloader gratis di tab baru, lalu kembali ke aplikasi ini dan klik tab <strong>&quot;Pilih File MP4 Lokal&quot;</strong>. Unggahan lokal beroperasi 100% gratis, lancar, aman, tanpa CORS, dan secepat kilat karena berjalan langsung di memori komputer Anda!
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-zinc-950 border border-zinc-850 rounded-2xl">
+                      <p className="font-bold text-zinc-200 flex items-center gap-1.5 text-xs">
+                        <span className="text-indigo-400">🌐</span> Solusi Permanen (Gunakan Hosting Node.js / Express):
+                      </p>
+                      <p className="mt-1 text-[11px] text-zinc-400 leading-relaxed pl-5">
+                        <strong>GitHub Pages bersifat 100% Statis</strong>, sehingga file server backend penuh kami (<code className="text-zinc-300 font-mono">server.ts</code>) tidak berjalan di sana. Agar fitur Ekstraksi otomatis dan sensor bypass CORS bekerja secara otomatis, Anda direkomendasikan meng-hosting kode repositori ini pada penyedia cloud full-stack Node.js, seperti:
+                      </p>
+                      <ul className="list-disc pl-9 mt-1.5 text-[10.5px] text-zinc-400 space-y-1">
+                        <li><strong>Railway App / Render / Heroku</strong> (Mendukung server.ts Express)</li>
+                        <li><strong>Vercel / Netlify</strong> (Dengan mengonfigurasi API routes sebagai Serverless Functions)</li>
+                        <li><strong>VPS Pribadi (Ubuntu / CentOS)</strong> menggunakan PM2 untuk menjalankan server secara tangguh</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-zinc-500 italic leading-relaxed pt-2">
+                    Aplikasi Anda sudah memiliki backend tangguh <code className="text-zinc-400 font-mono">server.ts</code> terintegrasi yang siap dipasang di server Node.js pilihan Anda! Jika digunakan secara lokal di komputer pengembang via NPM Start / NPM Dev, fitur ekstraksi Pinterest ini bekerja 100% lancar tanpa kegagalan.
                   </p>
                 </div>
               )}
