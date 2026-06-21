@@ -137,6 +137,9 @@ export default function App() {
   const [isDraggingVideo, setIsDraggingVideo] = useState<boolean>(false);
   const [isParsingPinterest, setIsParsingPinterest] = useState<boolean>(false);
   const [pinterestStatusText, setPinterestStatusText] = useState<string>("");
+  const [customApiBase, setCustomApiBase] = useState<string>(
+    () => localStorage.getItem("custom_api_base") || ""
+  );
   const [activeModal, setActiveModal] = useState<"about" | "privacy" | "contact" | "disclaimer" | "cors_help" | null>(null);
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
@@ -1069,7 +1072,7 @@ export default function App() {
   const handleCloudOrPinterestSubmit = async (urlStr: string) => {
     if (!urlStr) return;
     const trimmed = urlStr.trim();
-    const isStaticHosting = window.location.hostname.endsWith("github.io");
+    const isStaticHosting = window.location.hostname.endsWith("github.io") && !customApiBase;
 
     // Check if it is a Pinterest link
     if (trimmed.includes("pinterest.com") || trimmed.includes("pin.it")) {
@@ -1139,11 +1142,11 @@ export default function App() {
           ];
 
           let parsedUrl = "";
-          for (const rx of regexes) {
-            const matches = html.match(rx);
+          for (const regex of regexes) {
+            const matches = html.match(regex);
             if (matches && matches.length > 0) {
               const matchStr = matches[0];
-              const matchGroup = html.match(rx);
+              const matchGroup = html.match(regex);
               
               const targetStr = (matchGroup && matchGroup[1]) ? matchGroup[1] : matchStr;
               parsedUrl = targetStr.replace(/\\/g, "").replace(/&amp;/g, "&");
@@ -1200,8 +1203,9 @@ export default function App() {
             throw new Error(errorMsg);
           }
         } else {
-          // Normal flow (backend server active)
-          const res = await fetch(`/api/pinterest-parser?url=${encodeURIComponent(trimmed)}`);
+          // Normal flow (backend server active or external API host set)
+          const urlToFetch = `${customApiBase || ""}/api/pinterest-parser?url=${encodeURIComponent(trimmed)}`;
+          const res = await fetch(urlToFetch);
           
           const contentType = res.headers.get("content-type") || "";
           if (!res.ok || contentType.includes("text/html")) {
@@ -1212,7 +1216,10 @@ export default function App() {
         }
         
         if (json && json.success && (json.proxiedUrl || json.directUrl)) {
-          const finalStreamUrl = isStaticHosting ? json.directUrl : (json.proxiedUrl || json.directUrl);
+          let finalStreamUrl = isStaticHosting ? json.directUrl : (json.proxiedUrl || json.directUrl);
+          if (customApiBase && finalStreamUrl.startsWith("/api/")) {
+            finalStreamUrl = `${customApiBase}${finalStreamUrl}`;
+          }
           setStreamUrl(finalStreamUrl);
           setStreamError(null);
         } else {
@@ -1222,7 +1229,11 @@ export default function App() {
         console.error("Failed to parse Pinterest video", err);
         let message = err.message;
         if (message.includes("Failed to fetch")) {
-          message = "Koneksi ke semua proxy CORS eksternal diblokir oleh browser atau ekstensi AdBlock Anda.";
+          if (isStaticHosting) {
+            message = "Koneksi ke semua proxy CORS eksternal diblokir oleh browser atau ekstensi AdBlock Anda.";
+          } else {
+            message = "Gagal terhubung ke API Parser Pinterest atau custom API Base URL Anda.";
+          }
         }
         
         let tipMsg = "";
@@ -1291,7 +1302,7 @@ export default function App() {
         }
         return;
       } else {
-        finalUrl = `/api/proxy-video?url=${encodeURIComponent(directUrl)}`;
+        finalUrl = `${customApiBase || ""}/api/proxy-video?url=${encodeURIComponent(directUrl)}`;
       }
     }
     
@@ -1434,7 +1445,7 @@ export default function App() {
         category: "Promosi",
       };
 
-      const res = await fetch("/api/gemini/storyboard", {
+      const res = await fetch(`${customApiBase || ""}/api/gemini/storyboard`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1721,6 +1732,45 @@ export default function App() {
                   <p><strong>Pinterest Video:</strong> Salin tautan halaman Pin berkas video Pinterest (contoh: <code className="text-zinc-400">https://pin.it/XXXXXX</code> atau <code className="text-zinc-400">pinterest.com/pin/...</code>), tempel di atas dan klik <strong>Konversi & Putar</strong>. Sistem otomatis menarik dan membuka proteksi CORS media!</p>
                   <p><strong>Google Drive:</strong> Bagikan &rarr; Ubah akses menjadi &quot;Siapa saja yang memiliki link&quot; &rarr; Salin Link.</p>
                   <p><strong>Dropbox:</strong> Klik Bagikan &rarr; Buat tautan &rarr; Salin Tautan berkas.</p>
+                </div>
+
+                <div className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-850 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-extrabold text-zinc-300 flex items-center gap-1.5 text-[10.5px]">
+                      <span>🔧</span> API Proxy Backend (Solusi Deploys GitHub Pages)
+                    </span>
+                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${customApiBase ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-zinc-850 text-zinc-500"}`}>
+                      {customApiBase ? "Custom API Aktif" : "Bawaan Client-Side"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-zinc-400 leading-relaxed">
+                    Karena <strong>GitHub Pages bersifat 100% statis</strong>, fitur ekstraksi Pinterest otomatis di browser kadangkala diblokir oleh sistem keamanan Pinterest (CORS). Anda dapat meng-hosting kode backend <code className="text-[9.5px] text-zinc-300 font-mono font-bold bg-zinc-900 px-1 py-0.5 rounded border border-zinc-850">server.ts</code> bawaan repositori ini di <strong>Render, Railway, atau VPS pribadi</strong> secara gratis, lalu tempel URL-nya di bawah ini agar semua fitur lancar jaya!
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customApiBase}
+                      onChange={(e) => {
+                        let val = e.target.value.trim();
+                        if (val.endsWith("/")) val = val.substring(0, val.length - 1);
+                        setCustomApiBase(val);
+                        localStorage.setItem("custom_api_base", val);
+                      }}
+                      placeholder="Contoh: https://video-cutter-backend.onrender.com"
+                      className="flex-1 bg-zinc-900 px-3 py-2 rounded-xl border border-zinc-800 text-zinc-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                    />
+                    {customApiBase && (
+                      <button
+                        onClick={() => {
+                          setCustomApiBase("");
+                          localStorage.removeItem("custom_api_base");
+                        }}
+                        className="bg-rose-950/30 hover:bg-rose-900/30 text-rose-400 px-3 py-2 rounded-xl text-[10px] border border-rose-900/20 transition font-bold cursor-pointer shrink-0"
+                      >
+                        Reset / Hapus
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
